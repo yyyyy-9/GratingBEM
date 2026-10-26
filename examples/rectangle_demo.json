@@ -1,0 +1,14 @@
+{
+  "simulation": {
+    "profile": {"shape":"rectangle", "period_um":0.8, "height_um":0.08,
+                "duty_cycle":0.45, "corner_radius_um":0.005},
+    "wavelength_nm":248.33,
+    "incidence":{"angle_deg":12.0},
+    "target_order":0,
+    "material":{"epsilon_real":-8, "epsilon_imag":1}
+  },
+  "numerics":{"p_order":4, "max_panel_wavelengths":0.7,
+              "modes_air":65, "modes_metal":20, "oversample":12, "max_nodes":700},
+  "polarizations":["TE","TM"],
+  "scan":{"parameter":"profile.corner_radius_um","values":[0.0,0.004,0.008]}
+}

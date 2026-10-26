@@ -1,0 +1,17 @@
+{
+  "simulation": {
+    "profile": {"shape": "echelle", "period_um": 12.658227848101266,
+                "blaze_deg": 74.0, "apex_deg": 90.0,
+                "tip_radius_um": 0.02, "valley_radius_um": 0.05},
+    "wavelength_nm": 248.33,
+    "incidence": {"littrow_order": -98},
+    "material": {"model": "aluminum_rakic_ld"},
+    "target_order": -98
+  },
+  "numerics": {"p_order": 4, "max_panel_wavelengths": 1.0,
+                "modes_air": 155, "modes_metal": 25,
+                "oversample": 16, "max_nodes": 1800},
+  "polarizations": ["TE", "TM"],
+  "scan": {"parameter": "profile.tip_radius_um", "values": [0.01,0.02,0.03]},
+  "adaptive": {"target_abs_tol": 0.001, "min_levels": 3, "max_levels": 5}
+}
