@@ -60,7 +60,7 @@ def test_auto_parallel_groups_process_and_host_progress():
 def test_auto_negative_low_modes_fallback_even_parallel():
     # A deep echelle with a long period is used as a negative control;
     # 35 modes on a short, shallow flat period might already suffice.
-    p=Profile.echelle(1000/83.19,76.156,90)
+    p=Profile.echelle(1000/79,74.0,90)
     d=p.period_um
     theta0=72.
     theta1=math.degrees(math.asin(math.sin(math.radians(theta0))+.24833/d))
@@ -85,7 +85,7 @@ def test_auto_no_wrong_reuse_wavelength_or_geometry_and_per_case_error():
     budget=Numerics(p_order=2,max_panel_wavelengths=1.0,modes_air=155,
                     modes_metal=25,oversample=10,max_nodes=80)
     s=[case(10),case(shift(10)),case(10,
-                 profile=Profile.echelle(1000/83.19,76.156,90))]
+                 profile=Profile.echelle(1000/79,74.0,90))]
     out=calculate_many(s,budget,on_error='record',scan_workers=2,scan_backend='process')
     assert out.errors[0] is None and out.errors[1] is None
     assert out.results[0] is not None and out.results[1] is not None

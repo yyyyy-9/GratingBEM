@@ -25,8 +25,11 @@ def test_row_block_matches_original_quadrature():
     ref_s,ref_d=periodic._SD(nodes,nodes,kernel,8,same=True)
     s1,d1=_matrix_rows(nodes,nodes,EwaldValueGradient(spec.period_um,spec.k0,spec.alpha0,modes=25),8,same=True,start=0,stop=4)
     s2,d2=_matrix_rows(nodes,nodes,EwaldValueGradient(spec.period_um,spec.k0,spec.alpha0,modes=25),8,same=True,start=4,stop=len(nodes.coords))
-    np.testing.assert_allclose(np.vstack((s1,s2)),ref_s,rtol=0,atol=0)
-    np.testing.assert_allclose(np.vstack((d1,d2)),ref_d,rtol=0,atol=0)
+    # Equivalent kernel expressions allow floating-point roundoff.
+    tolerance=16*np.finfo(float).eps
+    for actual,reference in ((np.vstack((s1,s2)),ref_s),(np.vstack((d1,d2)),ref_d)):
+        np.testing.assert_allclose(actual,reference,rtol=tolerance,
+                                   atol=tolerance*np.max(np.abs(reference)))
 
 
 def test_resumable_matrix_assembly(tmp_path):
@@ -81,15 +84,27 @@ def test_value_gradient_matches_hessian_kernel():
             np.testing.assert_allclose(a,b,atol=1e-12,rtol=1e-12)
 
 
-def test_assembly_hard_timeout_kills_workers(tmp_path):
+def _unresponsive_worker():
+    import time
+    time.sleep(60)
+
+
+def test_assembly_hard_timeout_kills_workers(tmp_path,monkeypatch):
     from gratingbem.coating import AssemblyTimeout
     import multiprocessing
+    context=multiprocessing.get_context('spawn')
+    process=context.Process
+    def stalled_process(*args,**kwargs):
+        kwargs.update(target=_unresponsive_worker,args=())
+        return process(*args,**kwargs)
+    # Exercise actual process termination without depending on solver speed.
+    monkeypatch.setattr(context,'Process',stalled_process)
     coated,num=config()
     before={p.pid for p in multiprocessing.active_children()}
     with pytest.raises(AssemblyTimeout):
         calculate(coated,num,polarizations=('TE',),assembly_options=AssemblyOptions(
-            checkpoint_dir=tmp_path/'timeout',block_rows=4,workers=2,
-            block_timeout_s=0.001))
+            checkpoint_dir=tmp_path/'timeout',block_rows=4,min_block_rows=4,
+            workers=2,block_timeout_s=0.2))
     after={p.pid for p in multiprocessing.active_children()}
     assert not (after-before), 'a timed-out assembly worker was left running'
 

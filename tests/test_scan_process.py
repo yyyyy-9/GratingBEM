@@ -43,12 +43,12 @@ def test_process_many_and_input_order_no_files(tmp_path,monkeypatch):
 
 def test_process_grid_three_axes_preserves_order_and_records_bad_case():
     # Test wavelength, angle and blaze axes with an actual echelle.
-    triangle=Simulation(Profile.echelle(1000/83.19,76.156,90),248.33,
-                        Incidence.angle(76.16),-94,Material.aluminum())
+    triangle=Simulation(Profile.echelle(1000/79,74.0,90),248.33,
+                        Incidence.angle(74.0),-98,Material.aluminum())
     n=Numerics(p_order=2,max_panel_wavelengths=4,modes_air=40,
                modes_metal=12,oversample=8,max_nodes=200)
-    a={'wavelength_nm':[248.33], 'incidence.angle_deg':[75.9,95.,76.1],
-       'profile.blaze_deg':[76.156,76.20]}
+    a={'wavelength_nm':[248.33], 'incidence.angle_deg':[73.9,95.,74.1],
+       'profile.blaze_deg':[74.0,74.20]}
     expected=scan_grid(triangle,a,n,on_error='record')
     got=scan_grid(triangle,a,n,scan_backend='process',scan_workers=2,on_error='record')
     same_results(expected,got)

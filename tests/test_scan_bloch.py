@@ -6,12 +6,12 @@ from gratingbem import Profile,Material,Incidence,Simulation,Numerics,calculate_
 from gratingbem._scan_bloch import groups,shareable,kernel_discrepancy
 
 
-def sim(angle,*,wavelength_nm=248.33,blaze=76.156):
-    return Simulation(Profile.echelle(1000/83.19,blaze,90),wavelength_nm,
-                      Incidence.angle(angle),-94,Material.aluminum())
+def sim(angle,*,wavelength_nm=248.33,blaze=74.0):
+    return Simulation(Profile.echelle(1000/79,blaze,90),wavelength_nm,
+                      Incidence.angle(angle),-98,Material.aluminum())
 
 
-def angle_shift(theta,wl=248.33,d=1000/83.19,alias=1):
+def angle_shift(theta,wl=248.33,d=1000/79,alias=1):
     arg=math.sin(math.radians(theta))+alias*wl/1000/d
     return math.degrees(math.asin(arg))
 
@@ -23,7 +23,7 @@ def reference_numerics(modes=155):
 
 def test_group_only_equivalent_and_same_material_wavelength_geometry():
     t=angle_shift(72.)
-    cases=[sim(72),sim(76),sim(t),sim(72.,blaze=76.20),sim(72.,wavelength_nm=250),sim(72)]
+    cases=[sim(72),sim(76),sim(t),sim(72.,blaze=74.20),sim(72.,wavelength_nm=250),sim(72)]
     assert groups(cases)==[[0,2,5],[1],[3],[4]]
 
 

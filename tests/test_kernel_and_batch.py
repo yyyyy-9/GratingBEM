@@ -25,9 +25,9 @@ def test_green_kernel_matches_outgoing_fourier_solution():
     that series analytically to check the value and all five derivatives.
     """
     k0=2*np.pi/.24833
-    alpha0=k0*np.sin(np.deg2rad(76.16))
+    alpha0=k0*np.sin(np.deg2rad(74.0))
     z=np.array([.08,-.12,.22])
-    for period in (.6,1000/83.19):
+    for period in (.6,1000/79):
         x=period*np.array([.013,.19,.49])
         for k in (k0,k0+2j,4.264229561097377+71.68977453877558j):
             alpha=alpha0+2*np.pi*np.arange(-3000,3001)/period
