@@ -69,3 +69,7 @@ grid = scan_grid(
 `SCAN_WORKERS` 与 `SCAN_BACKEND` 控制扫描任务的并行数和 `'thread'` / `'process'` 后端。Python API 对应 `scan_workers` 和 `scan_backend`。扫描级并行与单点 `workers>1` 不叠加；Windows/macOS 使用进程时，计算入口放在 `if __name__ == '__main__':` 中。
 
 根据 CPU 和内存从较小的并行数开始，可在启动前设置 `OPENBLAS_NUM_THREADS=1` 和 `OMP_NUM_THREADS=1`。完整结果顺序与输入顺序一致。参数点仍需按 [数值设置](accuracy.md) 判断收敛。
+
+## 扫描复用
+
+`BLOCH_REUSE = 'auto'` 自动识别同批参数点中的 Bloch 等价入射条件，共享算子装配和矩阵分解。每个入射方向仍独立求解并提取衍射结果。复用条件、多个右端项及核检查见[方法说明](methods.md)，相关论文见[相关参考文献](references.md)。
