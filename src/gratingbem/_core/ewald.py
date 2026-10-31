@@ -11,7 +11,8 @@ rejects beta_m near zero; a proxy/radiation formulation would be required.
 from __future__ import annotations
 import numpy as np
 from math import factorial
-from scipy.special import exp1,erfc,hankel1
+from scipy.special import exp1,erfc,erfcx,hankel1,wofz
+from ._ewald_series import ewald_series
 
 
 class EwaldHessian:
@@ -27,6 +28,24 @@ class EwaldHessian:
         self.b=np.where((self.b.real<0)|((abs(self.b.real)<1e-12)&(self.b.imag>0)),-self.b,self.b)
         if min(abs(self.b))<1e-8:raise ValueError('Wood anomaly; use another representation')
         self.coeffs=np.array([(self.k**2/(4*self.eta**2))**n/factorial(n) for n in range(nterms)],complex)
+        self._spectral_batches=[]
+        if self.method=='ewald':
+            for j in range(0,len(self.a),self.batchsize):
+                stop=min(j+self.batchsize,len(self.a))
+                bounds=[j,stop]
+                if self.k.imag==0:
+                    real=self.b[j:stop].imag==0
+                    bounds=[j,*list(j+1+np.flatnonzero(real[1:]!=real[:-1])),stop]
+                for start,end in zip(bounds[:-1],bounds[1:]):
+                    a=self.a[start:end,None];b=self.b[start:end,None]
+                    if np.all(b.imag==0):
+                        kind='evanescent';b=b.real
+                        q=b/(2*self.eta)
+                    elif np.all(b.real==0):
+                        kind='propagating';q=-b.imag/(2*self.eta)
+                    else:
+                        kind='complex';q=b/(2*self.eta)
+                    self._spectral_batches.append((a,b,q,kind))
 
     def evaluate(self,dx,dz):
         x=np.asarray(dx,float).reshape(-1);z=np.asarray(dz,float).reshape(-1)
@@ -54,40 +73,46 @@ class EwaldHessian:
             return g,gx,gz,hxx,hxz,hzz
         if self.method!='ewald':raise ValueError('bad method')
         absz=np.abs(z);sgn=np.sign(z); d=self.period;eta=self.eta
-        for j in range(0,len(self.a),self.batchsize):
-            a=self.a[j:j+self.batchsize,None]
-            b=self.b[j:j+self.batchsize,None]
-            q=b/(2*eta)
-            A=np.exp(-b*absz)*erfc(q-eta*absz)
-            B=np.exp(b*absz)*erfc(q+eta*absz)
+        u=eta*absz;u2=u*u
+        for a,b,q,kind in self._spectral_batches:
+            if kind=='propagating':
+                # b=-i*beta. Reflection and conjugation identities of w(z)
+                # replace TWO complex erfc evaluations by ONE upper-half-plane
+                # Faddeeva evaluation. Same Ewald terms and mode ordering.
+                e=np.exp(q*q-u2)
+                ew=e*wofz(q+1j*u)
+                phase=np.exp(-b*absz)
+                plus=2*(phase+1j*ew.imag)
+                minus=2*(ew.real-phase)
+            elif kind=='evanescent':
+                # Real b: scaled erfc avoids exp(+b*z)*erfc(...) overflow.
+                # Reflect q-u when negative so erfcx is only evaluated at >=0.
+                e=np.exp(-q*q-u2)
+                scaled=e*erfcx(np.abs(q-u))
+                A=np.where(q>=u,scaled,2*np.exp(-b*absz)-scaled)
+                B=e*erfcx(q+u)
+                plus=A+B;minus=B-A
+            else:
+                A=np.exp(-b*absz)*erfc(q-u)
+                B=np.exp(b*absz)*erfc(q+u)
+                plus=A+B;minus=B-A
+                e=np.exp(-q*q-u2)
             ph=np.exp(1j*a*x)
-            p=ph*(A+B)/(4*d*b)
-            dp=ph*(B-A)/(4*d)
-            e=np.exp(-q*q-eta*eta*absz*absz)
+            p=ph*plus/(4*d*b)
+            dp=ph*minus/(4*d)
             g+=p.sum(axis=0)
             gx+=(1j*a*p).sum(axis=0)
             gz+=sgn*dp.sum(axis=0)
             hxx+=(-a*a*p).sum(axis=0)
             hxz+=(sgn*1j*a*dp).sum(axis=0)
-            hzz+=(ph*(b*(A+B)-4*eta/np.sqrt(np.pi)*e)/(4*d)).sum(axis=0)
+            hzz+=(ph*(b*plus-4*eta/np.sqrt(np.pi)*e)/(4*d)).sum(axis=0)
         for l in range(-self.images,self.images+1):
             X=x-l*d
             tv=eta**2*(X*X+z*z)
             take=np.flatnonzero(tv<65)
             if not len(take):continue
             t=tv[take];et=np.exp(-t);e1=exp1(t)
-            E=[e1]
-            total=self.coeffs[0]*e1
-            D1=self.coeffs[0]*et/t
-            for order in range(1,self.nterms):
-                en=(et-t*E[-1])/order
-                E.append(en)
-                total+=self.coeffs[order]*en
-                D1+=self.coeffs[order]*E[-2]
-            D2=self.coeffs[0]*et*(1/t+1/(t*t))
-            if self.nterms>1:D2+=self.coeffs[1]*et/t
-            for order in range(2,self.nterms):
-                D2+=self.coeffs[order]*E[order-2]
+            total,D1,D2=ewald_series(t,et,e1,self.coeffs)
             fac=np.exp(1j*self.alpha0*l*d)
             g[take]+=fac*total/(4*np.pi)
             first=fac*(-eta**2/(2*np.pi))*D1

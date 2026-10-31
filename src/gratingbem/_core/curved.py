@@ -8,10 +8,10 @@ exponents and no claim of full RCIP validation.
 """
 from __future__ import annotations
 import math
-from functools import lru_cache
 import numpy as np
-from numpy.polynomial.legendre import leggauss
-from gratingbem._core.quadrature import Nodes,_poly_basis_data,basis_at,log_product_weights
+from gratingbem._core.quadrature import (Nodes,_poly_basis_data,basis_at,log_product_weights,
+                                        gauss_rule as _leggauss_cached,
+                                        _periodic_chord_geometry)
 from gratingbem._core.ewald import EwaldHessian
 from gratingbem._core.periodic import kernel_components
 from .segments import Line,Arc
@@ -69,14 +69,6 @@ def nearest_periodic_chord(x,curve,period):
     return max(0.,closest[0]-curve.sagitta),closest[1]
 
 
-@lru_cache(maxsize=16)
-def _leggauss_cached(nq):
-    """Reuse immutable Gaussian rules: the old code recalculated them per pair."""
-    x,w=leggauss(nq)
-    x.setflags(write=False);w.setflags(write=False)
-    return x,w
-
-
 def curved_panel_quadrature(curve,cut,nq,subdivisions):
     """Geometrically graded Gauss subintervals toward the near-target cut.
 
@@ -116,15 +108,21 @@ def build_matrices_curved(nodes,eps,mode_air=155,mode_metal=25,oversample=16,eta
     keys=('S1','S2','K1','K2','Ka1','Ka2','Td')
     mats={k:np.zeros((N,N),complex) for k in keys}
     cT=-(k2*k2-k1*k1)/(2*np.pi)
+    starts=nodes.panels['p'];ends=nodes.panels['q']
+    sagitta=np.asarray([curve.sagitta for curve in crvs])
+    lengths=nodes.panels['ds']
     for i in range(N):
         x=nodes.coords[i];normal=nodes.normals[i];ip=int(nodes.panel_idx[i])
         Y=nodes.coords.copy();Y[i]=x+np.array([.00053,.00081])
         raw=kernel_components(k1,k2,air,metal,x,normal,Y,nodes.normals)
         for c,k in enumerate(keys):mats[k][i,:]=raw[:,c]*nodes.weights
-        for j,curve in enumerate(crvs):
+        distances,cuts=_periodic_chord_geometry(x,starts,ends,sagitta,sp.period_um)
+        nearby=np.flatnonzero((distances<=near_cutoff*lengths)|
+                               (np.arange(npan)==ip))
+        for j in nearby:
+            curve=crvs[j]
             same=(j==ip)
-            dist,cut=nearest_periodic_chord(x,curve,sp.period_um)
-            if not (same or dist<=near_cutoff*curve.length):continue
+            dist=distances[j];cut=cuts[j]
             # For self the exact node parameter is used to split the singular
             # integrand, NOT a projected chord parameter.
             if same:cut=_poly_basis_data(p)[0][nodes.local_idx[i]];sub=1

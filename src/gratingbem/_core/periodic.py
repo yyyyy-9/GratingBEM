@@ -5,9 +5,9 @@ follow twice-normalized KM1 conventions. Numerical validation remains vital.
 """
 from __future__ import annotations
 import numpy as np
-from numpy.polynomial.legendre import leggauss
 from .ewald import EwaldHessian
-from .quadrature import _poly_basis_data, basis_at, log_product_weights, _dist_periodic
+from .quadrature import (_poly_basis_data, basis_at, log_product_weights,
+                         gauss_rule, _periodic_chord_geometry)
 
 def kernel_components(k1,k2,air,metal,x,n,Y,N):
     """Arrays of the six blocks S1,S2,K1,K2,K'1,K'2,Tdiff.
@@ -33,7 +33,7 @@ def panel_quadrature(x,panel_a,panel_b,t_,nq=20,near_div=1):
     tc=2*np.dot(x-(panel_a+panel_b)/2,vec)/(L*L)
     cut=float(np.clip(tc,-1,1))
     bounds=[-1.,cut,1.] if abs(cut)<.999999 else [-1.,1.]
-    t,w=leggauss(nq)
+    t,w=gauss_rule(nq)
     u=[];ww=[]
     for v1,v2 in zip(bounds[:-1],bounds[1:]):
         if v2-v1<1e-15:continue
@@ -57,6 +57,7 @@ def build_matrices(nodes,eps, mode_air=155,mode_metal=25,oversample=16,eta=5.,ma
     mats={key:np.zeros((nd,nd),complex) for key in keys}
     # Tdiff=(T2-T1) has exactly only a logarithmic self singularity.
     cT=-(k2*k2-k1*k1)/(2*np.pi)
+    starts=nodes.panels['p'];ends=nodes.panels['q'];lengths=nodes.panels['ds']
     for i in range(nd if max_rows is None else max_rows):
         x=nodes.coords[i];n=nodes.normals[i]
         Y=nodes.coords.copy()
@@ -64,12 +65,15 @@ def build_matrices(nodes,eps, mode_air=155,mode_metal=25,oversample=16,eta=5.,ma
         val=kernel_components(k1,k2,air,metal,x,n,Y,nodes.normals)
         for c,key in enumerate(keys):
             mats[key][i,:]=val[:,c]*nodes.weights
-        for j in range(nb):
+        distances,_=_periodic_chord_geometry(x,starts,ends,0.,sp.period_um,
+                                            min_squared_length=0.)
+        nearby=np.flatnonzero((distances<=1.7*lengths)|
+                               (np.arange(nb)==nodes.panel_idx[i]))
+        for j in nearby:
             pa=nodes.panels['p'][j];pb=nodes.panels['q'][j]
             L=nodes.panels['ds'][j]
             same=(j==nodes.panel_idx[i])
-            d=_dist_periodic(x,pa,pb,sp.period_um)
-            if not (same or d <= 1.7*L):continue
+            d=distances[j]
             subdivisions=1 if same else int(np.clip(np.ceil(L/max(d,.003*L)/1.6),1,60))
             tq,wq,Yq=panel_quadrature(x,pa,pb,tgl,oversample,subdivisions)
             nq=np.tile(nodes.panels['n'][j],(len(tq),1))
@@ -99,7 +103,7 @@ def rayleigh_mu_rho(nodes,mu,rho,p_quad=24):
     modes=np.arange(mmin,mmax+1)
     alpha=sp.alpha0+2*np.pi*modes/d
     beta=np.sqrt(k1*k1-alpha*alpha+0j)
-    t,w=leggauss(p_quad)
+    t,w=gauss_rule(p_quad)
     _,_,poly=_poly_basis_data(nodes.p_order)
     B=basis_at(t,poly)
     summ=np.zeros(len(modes),complex)

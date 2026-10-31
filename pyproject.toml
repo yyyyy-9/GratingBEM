@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gratingbem"
-version = "0.1.0a1"
-description = "2D periodic Maxwell boundary integral calculations for bare grating profiles"
+version = "0.2.0.dev9"
+description = "2D periodic Maxwell BEM with an opt-in experimental single-layer coating module"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -19,17 +19,18 @@ classifiers = [
 ]
 dependencies = ["numpy>=1.23", "scipy>=1.10"]
 
-[project.urls]
-Repository = "https://github.com/yyyyy-9/GratingBEM"
-Issues = "https://github.com/yyyyy-9/GratingBEM/issues"
-Documentation = "https://github.com/yyyyy-9/GratingBEM/blob/main/docs/zh/quickstart.md"
-
 [project.optional-dependencies]
-test = ["pytest>=7"]
+test = ["pytest>=7", "matplotlib>=3.6"]
 plot = ["matplotlib>=3.6"]
+fast = ["numba>=0.61"]
 
 [project.scripts]
 gratingbem = "gratingbem.cli:main"
+
+[project.urls]
+Repository = "https://github.com/yyyyy-9/GratingBEM"
+Issues = "https://github.com/yyyyy-9/GratingBEM/issues"
+Documentation = "https://github.com/yyyyy-9/GratingBEM/tree/main/docs/zh"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -6,11 +6,19 @@ from math import comb
 import numpy as np
 from numpy.polynomial.legendre import leggauss
 
+
+@lru_cache(maxsize=32)
+def gauss_rule(order):
+    """Shared, immutable Gauss rule; quadrature order is unchanged."""
+    t,w=leggauss(order)
+    t.setflags(write=False);w.setflags(write=False)
+    return t,w
+
 @lru_cache(None)
 def _poly_basis_data(p):
     if not 2 <= p <= 12:
         raise ValueError('Gauss order p must be from 2 to 12')
-    t,w=leggauss(p)
+    t,w=gauss_rule(p)
     coeff=np.linalg.inv(np.vander(t,N=p,increasing=True))
     # Coefficients of the Lagrange basis in monomials, shape (p,p).
     return t,w,coeff
@@ -66,3 +74,19 @@ def _dist_periodic(x,a,b,d):
         distance=np.linalg.norm(x-(a+shift+proj*diff))
         smallest=min(smallest,distance)
     return smallest
+
+
+def _periodic_chord_geometry(x,starts,ends,sagitta,period,*,min_squared_length=1e-28):
+    """Nearest chords over the same three periodic images, in one array pass."""
+    vec=ends-starts
+    den=np.maximum(np.einsum('ij,ij->i',vec,vec),min_squared_length)
+    best_dist=np.full(len(starts),np.inf)
+    best_t=np.zeros(len(starts))
+    for shift in (-period,0.,period):
+        origin=starts+np.array([shift,0.])
+        pr=np.einsum('ij,ij->i',x[None,:]-origin,vec)/den
+        pr=np.clip(pr,0.,1.)
+        dd=np.linalg.norm(x[None,:]-origin-pr[:,None]*vec,axis=1)
+        mask=dd<best_dist
+        best_dist[mask]=dd[mask];best_t[mask]=2*pr[mask]-1
+    return np.maximum(0.,best_dist-sagitta),best_t

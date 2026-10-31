@@ -13,7 +13,8 @@ import math
 import os
 import numpy as np
 
-from gratingbem._core.quadrature import _poly_basis_data, basis_at, log_product_weights
+from gratingbem._core.quadrature import (_poly_basis_data, basis_at, log_product_weights,
+                                         _periodic_chord_geometry)
 from gratingbem._core.ewald import EwaldHessian
 from gratingbem._core.periodic import kernel_components
 from gratingbem._core.curved import curved_panel_quadrature
@@ -22,32 +23,10 @@ _KEYS=('S1','S2','K1','K2','Ka1','Ka2','Td')
 _CTX=None
 
 
-def _periodic_chord_geometry(x, starts, ends, sagitta, period):
-    """Vectorized periodic nearest chord; reproduces v13's 3-image test.
-
-    Distances used *only* for deciding which panels require product quadrature;
-    physical kernels still use the full Ewald periodic Green function.
-    """
-    vec=ends-starts
-    den=np.maximum(np.einsum('ij,ij->i',vec,vec),1e-28)
-    best_dist=np.full(len(starts),np.inf)
-    best_t=np.zeros(len(starts))
-    for shift in (-period,0.,period):
-        s=starts+np.array([shift,0.])
-        pr=np.einsum('ij,ij->i',x[None,:]-s,vec)/den
-        pr=np.clip(pr,0.,1.)
-        dd=np.linalg.norm(x[None,:]-s-pr[:,None]*vec,axis=1)
-        mask=dd<best_dist
-        best_dist[mask]=dd[mask]
-        best_t[mask]=2*pr[mask]-1
-    return np.maximum(0.,best_dist-sagitta), best_t
-
-
-def _init_worker(nodes, eps, mode_air, mode_metal, oversample, eta, near_cutoff):
-    global _CTX
+def _make_context(nodes, eps, mode_air, mode_metal, oversample, eta, near_cutoff):
     sp=nodes.spec;k1=sp.k0;k2=k1*np.sqrt(eps+0j)
     curves=nodes.panels['curves']
-    _CTX=dict(nodes=nodes, air=EwaldHessian(sp.period_um,k1,sp.alpha0,eta=eta,modes=mode_air),
+    return dict(nodes=nodes, air=EwaldHessian(sp.period_um,k1,sp.alpha0,eta=eta,modes=mode_air),
               metal=EwaldHessian(sp.period_um,k2,sp.alpha0,eta=eta,modes=mode_metal),
               k1=k1,k2=k2,cT=-(k2*k2-k1*k1)/(2*np.pi),
               oversample=oversample,near_cutoff=near_cutoff,
@@ -61,8 +40,13 @@ def _init_worker(nodes, eps, mode_air, mode_metal, oversample, eta, near_cutoff)
               coeff=_poly_basis_data(nodes.p_order)[2])
 
 
-def _assemble_rows(bounds):
-    ctx=_CTX
+def _init_worker(*params):
+    global _CTX
+    _CTX=_make_context(*params)
+
+
+def _assemble_rows(bounds,context=None):
+    ctx=_CTX if context is None else context
     nodes=ctx['nodes'];p=nodes.p_order
     curves=nodes.panels['curves'];N=len(nodes.coords)
     result=np.empty((len(_KEYS),bounds[1]-bounds[0],N),complex)
@@ -110,8 +94,10 @@ def build_matrices_parallel(nodes,eps,mode_air=155,mode_metal=25,oversample=16,
     mats=np.empty((len(_KEYS),N,N),complex)
     params=(nodes,eps,mode_air,mode_metal,oversample,eta,near_cutoff)
     if workers==1:
-        _init_worker(*params)
-        for row,block in map(_assemble_rows,bounds):mats[:,row:row+block.shape[1],:]=block
+        context=_make_context(*params)
+        for bound in bounds:
+            row,block=_assemble_rows(bound,context)
+            mats[:,row:row+block.shape[1],:]=block
     else:
         # On POSIX fork avoids repeated module import; spawn is used on Windows.
         ctx=get_context('fork' if os.name=='posix' else 'spawn')

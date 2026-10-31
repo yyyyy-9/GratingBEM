@@ -1,92 +1,78 @@
 # GratingBEM
 
-[![Tests](https://github.com/yyyyy-9/GratingBEM/actions/workflows/ci.yml/badge.svg)](https://github.com/yyyyy-9/GratingBEM/actions/workflows/ci.yml)
+二维周期光栅的 Python 边界元计算工具，支持 TE/TM 衍射效率、直线与圆弧轮廓，以及波长、入射角和几何参数扫描。计算结果可直接作为 NumPy 数组使用，并通过 Matplotlib 显示。
 
-**Bare-interface diffraction-grating calculations using a 2D periodic Maxwell boundary integral equation (KM1 / high-order Nyström).**
+## 安装与运行
 
-面向计算光栅的研究型 Python 包。支持金属反射光栅的 TE/TM、全部传播级次、复杂槽形以及几何参数扫描，**不包含涂层算法和未经充分验证的通用 RCIP**。公开接口不再使用历史 v9–v16 模块名。
-
-> **Research alpha (0.1.0a1)** — 可安装、可重复计算、具备独立测试的源码发行包；不是已通过所有材料和轮廓验证的商业求解器，也未发布到 PyPI。所有衍射效率需做独立网格与积分阶数检查。
-
-## 最快上手（3 条命令）
+从 [Releases](https://github.com/yyyyy-9/GratingBEM/releases) 下载 `GratingBEM.zip`，完整解压并进入项目目录：
 
 ```bash
-python -m pip install .
-python -m gratingbem init --shape echelle -o my_grating.json
-python -m gratingbem run my_grating.json -o results/echelle --workers 4
+python -m pip install -e ".[plot]"
+python main.py
 ```
 
-结果：`results/echelle/result.json`（计算摘要和全部级次）、`orders.csv`（逐级 TE/TM 效率）、`profile.svg`（轮廓）、`run_info.json`（软件版本和运行环境）。
+需要 Python 3.10+。数值计算依赖 NumPy、SciPy，绘图使用 Matplotlib；不需要另外安装商业仿真软件。也可克隆本仓库后执行相同命令。
 
-若只想核对几何、材料、入射角和预计未知量，不必运行求解：
+## 设置计算
 
-```bash
-python -m gratingbem inspect my_grating.json
-```
-
-## Python 示例
+修改根目录 [main.py](main.py) 顶部的设置：
 
 ```python
-from gratingbem import (Profile, Material, Incidence, Simulation,
-                        Numerics, calculate, scan, efficiency)
-
-# Newport 402E 参数的理想化几何；圆角和材料是模型假设，不是厂家测量
-profile = Profile.echelle(
-    period_um=1000 / 79,
-    blaze_deg=74,
-    apex_deg=90,
-    tip_radius_um=0.020,
-    valley_radius_um=0.050,
+PROFILE = Profile.echelle(
+    period_um=1000 / 79, blaze_deg=74, apex_deg=90,
+    tip_radius_um=0.020, valley_radius_um=0.050,
 )
-sim = Simulation(
-    profile=profile,
-    wavelength_nm=248.33,
-    incidence=Incidence.littrow(-98),
-    target_order=-98,
-    material=Material.aluminum(),
-)
-settings = Numerics(p_order=4, max_panel_wavelengths=1.0)
-result = calculate(sim, settings, workers=1)
-print(result.summary())
-print('目标级次 TE (%)', efficiency(result, -98, 'TE'))
-result.save('results/one_run')
-
-radius_scan = scan(sim, 'profile.tip_radius_um',
-                   [0.005, 0.01, 0.02], settings, workers=1)
-radius_scan.save('results/radius_scan')
+WAVELENGTH_NM = 248.33
+SOURCE = Incidence.littrow(-98)  # 或 Incidence.angle(74.0)
+TARGET_ORDER = -98
+METAL = Material.aluminum()
+MODE = 'single'
 ```
 
-结果中的 `TE_target_pct`、`TM_target_pct` 是目标级次**绝对入射功率百分比**，不是相对镜面效率。单位：`wavelength_nm` 为 nm，`period_um` / 高度 / 圆角半径为 µm，角度为度，复介电常数无量纲。损耗约定为 `exp(-iωt)`，被动材料应有 `Im(ε)≥0`。
+几何长度用 µm，波长用 nm，角度用度。示例参考 Newport 79 线/mm、74° 中阶梯的名义参数；各参数的来源和假设见 [Newport 79 线示例](docs/zh/newport79.md)。轮廓也可设为矩形、梯形、台阶、自定义折线或直线/圆弧路径，见 [轮廓设置](docs/zh/profiles.md)。
 
-Python 脚本使用多进程时，请将计算和扫描放在 `if __name__ == '__main__':` 保护下，再设置 `workers=4`；上面的 Python 示例先用单进程，CLI 已处理启动保护。级次必须为整数，Littrow 的正负号按 `kx(m)=kx(入射)+2πm/d` 定义，回返时 `sinθ=-mλ/(2d)`。角度和 Littrow 条件只能指定一种。
+## 扫描
 
-## 已支持的功能
+`MODE` 可选择单次计算、单参数扫描、组合网格或配对扫描：
 
-- 单界面周期金属 / 分段均匀介质半空间，TE/TM，固定波长或 Littrow 条件。
-- 解析直线、解析圆弧、矩形、梯形、多级阶梯、中阶梯、圆角与用户自定义混合路径。
-- 双密度周期 KM1 传输积分方程、准周期 Green 函数、解析对数奇异项和高阶 Nyström。
-- 多进程矩阵装配、单次计算、单参数扫描、二维扫描与经验自适应加密。
-- 输出传播级次、边界矩阵残差、被动性检查、面元数和装配/求解耗时。
+```python
+MODE = 'angle'       # 入射角；另支持 wavelength、blaze
+ANGLE_VALUES = np.linspace(73.5, 74.5, 7)
 
-**不支持：** 氧化膜或涂层、多层、有限厚度透射结构、3D 或锥形入射、沿 x 回折的悬垂轮廓、Wood/Rayleigh 奇点处的稳定计算、通用 RCIP。平滑圆角采用真实曲线求积；尖角默认采用分级网格而非已验证 RCIP。
+# 组合网格扫描，计算全部参数组合
+MODE = 'grid'
+SCAN_AXES = {
+    'wavelength': np.linspace(247, 249, 5),
+    'angle': np.linspace(73.5, 74.5, 7),
+}
+# 改为 MODE = 'paired' 时，等长数组按位置配对
+```
 
-## 质量与风险
+波长扫描默认固定实验室入射角；需要每个波长重新满足 Littrow 时，设置 `WAVELENGTH_INCIDENCE = 'littrow'`。详见 [扫描用法](docs/zh/scanning.md)。
 
-程序从历史 BEM v16 裸光栅研究内核整理而来。发布审查修正了输入歧义、正 Littrow 级次的角度符号及扫描退出状态，原 −98 级参考计算保持。测试包括平面 Fresnel、记录值回归、轮廓合法性、并行一致性、CLI/扫描/收敛和文件输出；详见 [验证记录](docs/zh/verification.md)及[精度边界](docs/zh/accuracy.md)。**总反射率不超过 100% 是必要而非充分条件；小矩阵残差也不代表真实 Maxwell 效率已收敛。** 研究数据应保存网格/多项式阶数、Ewald 截断与独立数值参考。
+## 读取结果
 
-## 使用文档
+`main.py` 在终端打印效率并显示图窗，默认不写结果文件。在 Jupyter/IPython 中执行 `%run -i main.py` 后，可直接取数组：
 
-- [安装与 10 分钟教程](docs/zh/quickstart.md)
-- [矩形、阶梯、圆弧、自定义轮廓](docs/zh/profiles.md)
-- [参数扫描、数值设置及结果](docs/zh/workflows.md)
-- [精度验证、模型边界与常见错误](docs/zh/accuracy.md)
-- [开发与正式发布检查表](docs/zh/release.md)
-- [本地测试与参考数值记录](docs/zh/verification.md)
+```python
+data['orders']           # 最后一个计算点的全部传播级次
+data['TE_orders_pct']    # 各级次 TE 效率，百分数
+data['TM_orders_pct']    # 各级次 TM 效率，百分数
+data['TE_map']           # 扫描目标级次效率，形状对应扫描轴
+data['TM_map']
+data['results']          # 各点的完整求解结果
+```
 
-本包的核心为 Python + NumPy + SciPy。`pip install '.[test]'` 后运行 `python -m pytest`，额外积分测试用 `python -m pytest -m slow`。完整集合用 `python -m pytest -o addopts=''`。GitHub [Releases](https://github.com/yyyyy-9/GratingBEM/releases) 提供 wheel、源码包及校验摘要；当前未上传 PyPI。
+也可在其他脚本中 `import main`，设置 `main.SHOW_PLOTS = False` 后调用 `main.run()`。Python API、CLI 和显式文件输出见 [快速使用](docs/zh/quickstart.md)。
 
-## Citation / reference
+## 模型与数值设置
 
-Research implementation of the 2D periodic Kleinman–Martin-style transmission BIE. Foundational papers include Helsing & Karlsson, [*On a Helmholtz Transmission Problem in Planar Domains with Corners*](https://arxiv.org/abs/1711.09796). Material dispersion: A. D. Rakić *et al.*, *Applied Optics* **37**, 5271–5283 (1998), [DOI:10.1364/AO.37.005271](https://doi.org/10.1364/AO.37.005271). These identify formulation/material background, not an independent validation of every implementation path. No claim is made that the research solver reproduces a manufacturer's proprietary groove shape or certified diffraction efficiency.
+裸界面计算采用周期 KM1 型双密度边界积分方程、Ewald 准周期 Green 函数和 Nyström 离散。适用二维周期、沿槽线不变的 TE/TM 问题；不包含三维锥形入射或粗糙度模型。单层介质膜可显式使用 [实验性涂层接口](docs/zh/coating.md)。
 
-MIT license. See [LICENSE](LICENSE).
+网格、求积阶数和核截断由 `NUMERICS` 设置。实际使用应检查这些设置的独立收敛，详见 [数值设置与适用范围](docs/zh/accuracy.md)。
+
+## 源码与许可
+
+求解器位于 `src/gratingbem`，使用示例位于 `examples`。仓库中的开发测试可安装 `.[test]` 后运行 `python -m pytest -q`。
+
+项目采用 [MIT 许可](LICENSE)。功能变化见 [更新记录](CHANGELOG.md)；问题与建议可提交至 [Issues](https://github.com/yyyyy-9/GratingBEM/issues)。

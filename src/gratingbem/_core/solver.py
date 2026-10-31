@@ -24,6 +24,7 @@ from gratingbem._core.materials import eps_al_rakic_ld
 from gratingbem._core.periodic import build_matrices, rayleigh_mu_rho
 from .profiles import Profile, from_dict as profile_from_dict
 from .curved import make_curve_nodes, build_matrices_curved, rayleigh_curved
+from .wood import rayleigh_cutoff_diagnostic
 
 
 @dataclass(frozen=True)
@@ -264,7 +265,8 @@ class Calculation:
 
 
 def calculate(problem:Problem,numerics:Numerics|None=None,polarizations=('TE','TM'),
-              *,_capture_internal=False,_assembly_function=None)->Calculation:
+              *,_capture_internal=False,_assembly_function=None,
+              energy_contour=False)->Calculation:
     """Compute all propagating orders of one single-interface periodic grating.
 
     Returns numeric results AND diagnostics. Passivity check is only R<=1;
@@ -274,8 +276,14 @@ def calculate(problem:Problem,numerics:Numerics|None=None,polarizations=('TE','T
     pols=tuple(str(p).upper() for p in polarizations)
     if len(set(pols))!=len(pols) or any(p not in ('TE','TM') for p in pols) or not pols:
         raise ValueError('polarizations must be a nonempty subset of TE,TM')
+    wood_diag = rayleigh_cutoff_diagnostic(problem)
+    if wood_diag['status'] == 'at_or_numerically_on_cutoff':
+        m = wood_diag['nearest_mode']['order']
+        raise ValueError(f'Rayleigh/Wood anomaly at or numerically near cutoff for order {m}; '
+                         'the current Ewald formulation is not stabilized there')
     t0=time.perf_counter()
-    nodes=make_profile_nodes(problem,num)
+    from .mesh_cache import make_nodes_cached
+    nodes=make_nodes_cached(problem,num,make_profile_nodes)
     t_mesh=time.perf_counter()
     eps=problem.epsilon_value
     assembly_function=(_assembly_function if _assembly_function is not None else
@@ -287,7 +295,7 @@ def calculate(problem:Problem,numerics:Numerics|None=None,polarizations=('TE','T
     ui=np.exp(1j*(nodes.spec.alpha0*nodes.coords[:,0]-nodes.spec.beta0*nodes.coords[:,1]))
     du=1j*(nodes.spec.alpha0*nodes.normals[:,0]-nodes.spec.beta0*nodes.normals[:,1])*ui
     amplitudes={};efficiencies={};diagnostics={}
-    stored_densities={} if _capture_internal else None
+    stored_densities={} if (_capture_internal or energy_contour) else None
     for pol in pols:
         chi=1+0j if pol=='TE' else eps
         z=chi*k2;c=z/abs(z)
@@ -299,7 +307,7 @@ def calculate(problem:Problem,numerics:Numerics|None=None,polarizations=('TE','T
         scaling=np.r_[np.ones(n),np.ones(n)/k1]
         A*=scaling[:,None];rhs*=scaling
         den=solve(A,rhs,check_finite=False)
-        if _capture_internal:
+        if _capture_internal or energy_contour:
             stored_densities[pol]=(den[:n].copy(),den[n:].copy())
         residual=float(np.linalg.norm(A@den-rhs)/np.linalg.norm(rhs))
         orders,amp,eff=(rayleigh_curved(nodes,den[:n],den[n:]) if problem.profile.has_arcs
@@ -311,22 +319,55 @@ def calculate(problem:Problem,numerics:Numerics|None=None,polarizations=('TE','T
                               matrix_residual=residual,
                               passes_passivity=bool(eff.sum()<=1+5e-4))
     t_solve=time.perf_counter()
+    if energy_contour:
+        from .energy import air_contour_absorption
+        # Use an independent, higher-order target contour quadrature and a
+        # conservative air-kernel truncation. Source Nyström nodes/densities
+        # remain unchanged; this only improves the independent flux check.
+        flux_order=max(10,num.p_order)
+        flux_modes=max(150,num.modes_air)
+        for pol in pols:
+            mu,rho=stored_densities[pol]
+            a1=air_contour_absorption(nodes,mu,rho,modes_air=flux_modes,eta=num.eta,
+                                       lift_wavelengths=.55,target_order=flux_order)
+            a2=air_contour_absorption(nodes,mu,rho,modes_air=flux_modes,eta=num.eta,
+                                       lift_wavelengths=.80,target_order=flux_order)
+            diagnostics[pol]['poynting_air_absorption']=a1
+            diagnostics[pol]['poynting_target_order']=flux_order
+            diagnostics[pol]['poynting_modes_air']=flux_modes
+            diagnostics[pol]['poynting_offset_variation']=abs(a1-a2)
+            diagnostics[pol]['reflection_plus_flux']=diagnostics[pol]['reflection_sum']+a1
+            diagnostics[pol]['energy_closure_error']=diagnostics[pol]['reflection_plus_flux']-1.
+    t_diagnostic=time.perf_counter()
     diagnostics.update(n_nodes=int(n),n_panels=int(len(nodes.panels['ds'])),
                        panels_per_edge=list(map(int,nodes.panels['counts_by_edge'])),
-                       n_propagating_orders=len(orders))
+                       n_propagating_orders=len(orders), wood_cutoff=wood_diag)
     warn=[]
+    if wood_diag['status'] == 'near_cutoff_heuristic':
+        m = wood_diag['nearest_mode']['order']
+        delta = wood_diag['nearest_cutoff_angles'][0]['angular_distance_deg']
+        warn.append(f'Near Rayleigh/Wood cutoff (heuristic): order {m}, '
+                    f'min |beta_m|/k0={wood_diag["min_abs_beta_over_k0"]:.4g}, '
+                    f'nearest cutoff angle distance={delta:.5g} deg; accuracy is not certified')
     if not np.any(orders==problem.target_order):warn.append('Target order is evanescent; efficiency=None')
     for pol in pols:
         if not diagnostics[pol]['passes_passivity']:
             warn.append(f'{pol}: R_total>1 violates passive-medium check; refine/discard result')
     if problem.epsilon is None:
         warn.append('Al Rakić LD bulk optical constants; no Al2O3/coating/roughness')
+    if energy_contour:
+        for pol in pols:
+            if (abs(diagnostics[pol]['energy_closure_error'])>0.01 or
+                    diagnostics[pol]['poynting_offset_variation']>0.01):
+                warn.append(f'{pol}: Poynting closure or contour-offset variation above 1%; '
+                            'independent energy check failed/refine contour quadrature')
     warn.append('Research KM1 solver without general-profile RCIP or rigorous error bounds')
     if problem.profile.has_arcs:
         warn.append('Analytic circular arc geometry; curved-panel quadrature, not polygon approximation')
     return Calculation(problem,num,orders,amplitudes,efficiencies,diagnostics,
                        dict(mesh_s=t_mesh-t0,assembly_s=t_assembly-t_mesh,
-                            solve_s=t_solve-t_assembly,total_s=t_solve-t0),warn,
+                            solve_s=t_solve-t_assembly,energy_diagnostic_s=t_diagnostic-t_solve,
+                            total_s=t_diagnostic-t0),warn,
                        (dict(nodes=nodes,densities=stored_densities) if _capture_internal else None))
 
 

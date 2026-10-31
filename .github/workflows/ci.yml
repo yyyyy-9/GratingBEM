@@ -33,7 +33,7 @@ jobs:
         run: python -m pip install "numpy==1.23.5" "scipy==1.10.1"
       - run: python -m pip install '.[test]'
       - run: python -m pytest -q
-      - name: Echelle reference and rejected coarse scan
+      - name: Extended numerical checks
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python -m pytest -q -m slow
       - run: python -m pip check

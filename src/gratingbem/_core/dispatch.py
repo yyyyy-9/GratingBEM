@@ -25,7 +25,7 @@ class Execution:
         if not 0<=self.indicator_memory<1:raise ValueError('indicator_memory in [0,1)')
 
 
-def calculate(problem,numerics=None,polarizations=('TE','TM'),*,execution=None,_capture_internal=False):
+def calculate(problem,numerics=None,polarizations=('TE','TM'),*,execution=None,_capture_internal=False,energy_contour=False):
     """Direct TE/TM periodic KM1; identical equations to v13.
 
     For line-only profiles, default v13 assembler is still used.
@@ -35,7 +35,7 @@ def calculate(problem,numerics=None,polarizations=('TE','TM'),*,execution=None,_
     if problem.profile.has_arcs:
         assembler=partial(build_matrices_parallel,workers=ex.workers,chunk_rows=ex.chunk_rows)
     return _calculate(problem,numerics,polarizations,_capture_internal=_capture_internal,
-                      _assembly_function=assembler)
+                      _assembly_function=assembler,energy_contour=energy_contour)
 
 
 def calculate_adaptive(problem,numerics=None,options=None,polarizations=('TE','TM'),

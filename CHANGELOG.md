@@ -1,13 +1,13 @@
-# Changelog
+# 更新记录
 
-## 0.1.0a1 — 2026-10-26
+## 添加
 
-- Public unit-explicit `Simulation`, `Material`, `Incidence`, `calculate`, `scan`, `scan_grid`, `calculate_adaptive` and `convergence` API.
-- Single `gratingbem` package with hidden numerical kernel, instead of versioned public imports.
-- CLI `init`, `inspect`, `run`, `scan`, `converge`; machine-readable results and reproducibility manifest.
-- Analytic lines/arcs, rounded rectangle/step/echelle profiles, basic quality guards.
-- Public scope excludes coating and unvalidated corner-RCIP; initial GitHub release remains a research alpha.
-- Publication review rejects fractional diffraction orders and conflicting incidence/material settings; signed Littrow orders use the matching incidence sign. Negative-order reference values are preserved.
-- CLI scans report passivity-failed cases and return nonzero, normalize polarization labels, and report filesystem errors clearly; grid scans reject unknown error policies.
-- Added analytic Fresnel cases, signed-Littrow and input counterexamples, actual parallel-assembly parity, conservative convergence status checks and a coarse-grid passivity rejection case.
-- Numerical formulation inherited from the v16 bare-interface prototype; reference parity is not an independent physical-accuracy certificate.
+- 交互式计算脚本，直接显示 TE/TM 效率和图形，结果保留为 NumPy 数组。
+- 单参数、组合网格和配对扫描，支持波长、入射角及几何参数。
+- 单层介质膜的实验性计算接口，支持检查点恢复。
+
+## 改进与修复
+
+- 优化周期 Green 函数计算与矩阵装配效率。
+- 修复并行计算的上下文和缓存访问问题。
+- 完善整数级次校验、带符号 Littrow 条件与计算失败状态。

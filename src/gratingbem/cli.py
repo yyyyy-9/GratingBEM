@@ -123,9 +123,13 @@ def main(argv=None):
             spec=data.get('scan')
             if not spec:raise ValueError('provide a scan object: {"parameter":"profile.tip_radius_um", "values":[...]}')
             if 'axes' in spec:
-                res=scan_grid(sim,spec['axes'],num,polarizations=pols,workers=args.workers,on_error=spec.get('on_error','record'))
+                res=scan_grid(sim,spec['axes'],num,polarizations=pols,workers=args.workers if int(spec.get('scan_workers',1))==1 else 1,
+                              scan_workers=int(spec.get('scan_workers',1)),scan_backend=spec.get('scan_backend','thread'),
+                              bloch_reuse=spec.get('bloch_reuse','auto'),on_error=spec.get('on_error','record'))
             else:
-                res=scan(sim,spec['parameter'],spec['values'],num,polarizations=pols,workers=args.workers,on_error=spec.get('on_error','record'))
+                res=scan(sim,spec['parameter'],spec['values'],num,polarizations=pols,workers=args.workers if int(spec.get('scan_workers',1))==1 else 1,
+                        scan_workers=int(spec.get('scan_workers',1)),scan_backend=spec.get('scan_backend','thread'),
+                        bloch_reuse=spec.get('bloch_reuse','auto'),on_error=spec.get('on_error','record'))
             res.save(out)
             invalid=sum(result is not None and any(not result.diagnostics[pol]['passes_passivity']
                         for pol in result.efficiencies) for result in res.results)
