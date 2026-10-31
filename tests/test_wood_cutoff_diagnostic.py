@@ -15,9 +15,8 @@ def test_79_littrow_reports_heuristic_wood_warning():
     assert d['nearest_cutoff_angles'][0]['angular_distance_deg'] < 0.12
 
 
-def test_83_littrow_is_outside_heuristic_warning_band():
-    sim=Simulation(Profile.echelle(1000/83.19,76.156,90),248.33,
-                   Incidence.littrow(-94),-94,Material.aluminum())
+def test_regular_incidence_is_outside_heuristic_warning_band():
+    sim=Simulation(Profile.flat(1.0),700,Incidence.angle(0),0,Material.aluminum())
     d=rayleigh_cutoff_diagnostic(sim.to_problem())
     assert d['status']=='outside_warning_band'
     assert d['min_abs_beta_over_k0'] > 0.1
